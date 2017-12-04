@@ -4,12 +4,16 @@
                           :sha "1616a3a"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
-                           :sha "b41dd1d"))
+                           :sha "ecde30b"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
                            :sha "2ab53a3"))
 
 (deftype ParserState [curr-input input parser-fns values]
+  (assert (instance? String curr-input))
+  (assert (instance? HashMap parser-fns))
+  (assert (instance? HashMap values))
+
   Stringable
   (string-list [_] (list "<ParserState>")))
 
@@ -24,6 +28,7 @@
   (recursive-descent [p]
     (sm/state-maybe
      (sm/new-sm (fn [parser-state]
+                  (assert (instance? ParserState parser-state))
                   (or (map (get-in parser-state [.values (.key p)])
                            (fn [value]
                              [value parser-state]))
@@ -36,6 +41,7 @@
   (recursive-descent [p]
     (sm/state-maybe
      (sm/new-sm (fn [parser-state]
+                  (assert (instance? ParserState parser-state))
                   (or (for [new-state (update-in parser-state [.values (.key p)] (.f p))
                             old-value (get-in parser-state [.values (.key p)])]
                         [old-value new-state])
@@ -52,12 +58,16 @@
                               rules)))))
 
 (defn next-input-buffer [s]
+  (assert (instance? ParserState s))
   (let [input (.input s)]
     (for [new-text (first input)]
-      (let [s (.curr-input s new-text)]
-        (.input s ((empty? new-text) empty-list (rest input)))))))
+      (-> s
+          (.curr-input new-text)
+          (.input (either (empty? new-text)
+                          (rest input)))))))
 
 (defn reader [n s]
+  (assert (instance? ParserState s))
   (let [text (.curr-input s)
         text-length (count text)]
     (or (and (< n text-length)
@@ -69,27 +79,32 @@
                         [text new-s]))
                  (maybe [text (.curr-input s "")])))
         ;; (< text-length n)
-        (for [new-s (next-input-buffer s)
-              [texts final-s] (reader (- n text-length) new-s)]
-          [(comp text texts) final-s]))))
+        (flat-map (next-input-buffer s)
+                  (fn [new-s]
+                    (let [next-read (reader (- n text-length) new-s)]
+                      (and next-read (let [[texts final-s] (extract next-read)]
+                                       (maybe [(comp text texts) final-s])))))))))
 
 (defn fn-reader [f s]
-  (let [text (.curr-input s)]
-    (let [length (f text)]
-      ((= 0 length)
-       nothing
-       (or (and (= length (count text))
-                (for [new-s (next-input-buffer s)
-                      [tail final-s] (fn-reader f new-s)]
-                  [(cons text tail) final-s]))
-           (maybe [(list (subs text 0 length))
-                   (.curr-input s (subs text length))]))))))
+  (assert (instance? Function f))
+  (assert (instance? ParserState s))
+  (let [text (.curr-input s)
+        length (f text)]
+    ((= 0 length)
+     nothing
+     (or (and (= length (count text))
+              (for [new-s (next-input-buffer s)
+                    [tail final-s] (fn-reader f new-s)]
+                [(cons text tail) final-s]))
+         (maybe [(list (subs text 0 length))
+                 (.curr-input s (subs text length))])))))
 
 (extend-type p/parser-not-char
   RecursiveDescent
   (recursive-descent [p]
     (sm/state-maybe
      (sm/new-sm (fn [parser-state]
+                  (assert (instance? ParserState parser-state))
                   (for [[c new-parser-state] (reader 1 parser-state)
                         :when-not (= (.test-c p) c)]
                     [c new-parser-state]))))))
@@ -99,6 +114,7 @@
   (recursive-descent [p]
     (sm/state-maybe
      (sm/new-sm (fn [parser-state]
+                  (assert (instance? ParserState parser-state))
                   (for [[c new-parser-state] (reader 1 parser-state)
                         :when (< (dec (char-code (.lower p)))
                                  (char-code c)
@@ -111,6 +127,7 @@
     (let [term-str (.term-str p)
           term-count (count term-str)]
       (sm/state-maybe (sm/new-sm (fn [parser-state]
+                                   (assert (instance? ParserState parser-state))
                                    (for [[text new-parser-state] (reader term-count parser-state)
                                          :when (= text term-str)]
                                      [term-str new-parser-state])))))))
@@ -120,6 +137,7 @@
   (recursive-descent [p]
     (sm/state-maybe
      (sm/new-sm (fn [s]
+                  (assert (instance? ParserState s))
                   (for [[str-list new-s] (fn-reader (.f p) s)
                         :let [line-count (reduce str-list 0
                                                  (fn [line-count s]
@@ -141,7 +159,7 @@
   (recursive-descent [p]
     (map (.rule p) (fn [rule]
                      (comp (sm/recur rule)
-                           (sm/state-maybe empty-list))))))
+                           (sm/state-maybe []))))))
 
 (extend-type p/ignore-rule
   Stringable
@@ -179,6 +197,7 @@
   (recursive-descent [p]
     (sm/state-maybe
      (sm/new-sm (fn [s]
+                  (assert (instance? ParserState s))
                   (either (map (get-in s [.parser-fns (.rule-name p)])
                                (fn [p] (p s)))
                           (let [_ (print-err "No parser rule defined for "
