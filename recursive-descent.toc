@@ -237,7 +237,8 @@
 
 
 (defn parser [grammar]
-  (let [[grammar-parser recursive-rules] (extract ((fr/evaluate grammar recursive-descent) {}))]
+  (let [grammar (p/string-terminal grammar)
+        [grammar-parser recursive-rules] (extract ((fr/evaluate grammar recursive-descent) {}))]
     (fn
       ([input]
        (flat-map (grammar-parser (ParserState "" (wrap-input input) recursive-rules {}))
