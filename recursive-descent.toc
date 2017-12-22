@@ -1,7 +1,7 @@
 
 (add-ns p (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                           "grammar.toc"
-                          :sha "1616a3a"))
+                          :sha "7690cd3"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
                            :sha "ecde30b"))
