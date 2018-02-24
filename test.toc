@@ -1,0 +1,55 @@
+
+;; Components to build the grammar out of
+(add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
+                             "grammar.toc"
+                             :sha "7690cd3"))
+(add-ns rd (module "recursive-descent.toc"))
+
+(defn scan-line [s]
+  ;; all chars except \n
+  (assert (instance? String s))
+  (inline C Integer "
+    char *str = NULL;
+    int64_t strLen;
+    if (s_0->type == StringBufferType) {
+      str = ((String *)s_0)->buffer;
+      strLen = ((String *)s_0)->len;
+    } else if (s_0->type == SubStringType) {
+      str = ((SubString *)s_0)->buffer;
+      strLen = ((SubString *)s_0)->len;
+    }
+    int64_t len;
+    for (len = 0; len < strLen && str[len] != 10;)
+       len++;
+    dec_and_free(s_0, 1);
+    return(integerValue(len));
+"))
+
+(def line
+  (grmr/rule "read-line"
+             (grmr/apply-fn identity
+                            (grmr/optional (grmr/term-fn scan-line))
+                            (grmr/ignore "\n"))))
+
+(def post (grmr/none-or-more line))
+
+(def generate-post
+  (rd/parser post))
+
+(def input-text
+"---
+layout: post
+tags: [core]
+comments: true
+---
+
+### We're rolling now
+")
+
+(main [_]
+      (map (generate-post input-text)
+           (fn [lines]
+             (or (= 7 (count lines))
+                 (do
+                   (print-err 'fail!!! (count lines))
+                   (abort))))))

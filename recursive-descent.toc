@@ -90,14 +90,13 @@
   (assert (instance? ParserState s))
   (let [text (.curr-input s)
         length (f text)]
-    ((= 0 length)
-     nothing
-     (or (and (= length (count text))
-              (for [new-s (next-input-buffer s)
-                    [tail final-s] (fn-reader f new-s)]
-                [(cons text tail) final-s]))
-         (maybe [(list (subs text 0 length))
-                 (.curr-input s (subs text length))])))))
+    (or (and (or (= length (count text)))
+             (for [new-s (next-input-buffer s)
+                   [tail final-s] (fn-reader f new-s)]
+               [(cons text tail) final-s]))
+        (and (< 0 length)
+             (maybe [(list (subs text 0 length))
+                     (.curr-input s (subs text length))])))))
 
 (extend-type p/parser-not-char
   RecursiveDescent
@@ -138,16 +137,16 @@
     (sm/state-maybe
      (sm/new-sm (fn [s]
                   (assert (instance? ParserState s))
-                  (for [[str-list new-s] (fn-reader (.f p) s)
-                        :let [line-count (reduce str-list 0
-                                                 (fn [line-count s]
-                                                   (reduce s line-count
-                                                           (fn [line-count c]
-                                                             (+ line-count ((= c "\n") 1 0))))))]
-                        new-s (or (update-in new-s [.values 'line-number]
-                                             (fn [lc] (+ lc line-count)))
-                                  (assoc-in new-s [.values 'line-number] line-count))]
-                    [(to-str str-list) new-s]))))))
+                  (for [[str-list new-s] (fn-reader (.f p) s)]
+                    (let [line-count (reduce str-list 0
+                                             (fn [line-count s]
+                                               (reduce s line-count
+                                                       (fn [line-count c]
+                                                         (+ line-count ((= c "\n") 1 0))))))]
+                      [(to-str str-list)
+                       (either (update-in new-s [.values 'line-number]
+                                          (fn [lc] (+ lc line-count)))
+                               (assoc-in new-s [.values 'line-number] line-count))])))))))
 
 (extend-type p/repeat-rule
   RecursiveDescent
