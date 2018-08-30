@@ -4,7 +4,7 @@
                           :sha "7690cd3"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
-                           :sha "ecde30b"))
+                           :sha "83b8ddb"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
                            :sha "2ab53a3"))
@@ -49,7 +49,7 @@
                                          (str "'" (.key p) "'"))]
                         (abort))))))))
 
-(extend-type Function
+(extend-type Fn
   RecursiveDescent
   (recursive-descent [f]
     (sm/state-maybe (fn [& rules]
