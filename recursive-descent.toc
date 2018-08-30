@@ -4,7 +4,7 @@
                           :sha "7690cd3"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
-                           :sha "83b8ddb"))
+                           :sha "ecde30b"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
                            :sha "2ab53a3"))
