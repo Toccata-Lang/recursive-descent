@@ -1,10 +1,10 @@
 
 (add-ns p (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                           "grammar.toc"
-                          :sha "7690cd3"))
+                          :sha "1653d24"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
-                           :sha "ecde30b"))
+                           :sha "93614d5"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
                            :sha "2ab53a3"))
@@ -54,7 +54,7 @@
   (recursive-descent [f]
     (sm/state-maybe (fn [& rules]
                       (apply* (sm/state-maybe (fn [& parsed-values]
-                                                (apply f (remove parsed-values ignore?))))
+                                                (apply* f (remove parsed-values ignore?))))
                               rules)))))
 
 (defn next-input-buffer [s]
@@ -207,7 +207,7 @@
   RecursiveDescent
   (recursive-descent [u]
     (apply* (sm/state-maybe (fn [& rules]
-                              (apply comp rules)))
+                              (apply* comp rules)))
             (.rules u))))
 
 (extend-type p/Cat
