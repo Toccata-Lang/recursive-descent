@@ -1,13 +1,13 @@
 
 (add-ns p (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                           "grammar.toc"
-                          :sha "1653d24"))
+                          :sha "cb55c51"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
-                           :sha "93614d5"))
+                           :sha "dc80090"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
-                           :sha "2ab53a3"))
+                           :sha "9727acf"))
 
 (deftype ParserState [curr-input input parser-fns values]
   (assert (instance? String curr-input))
@@ -53,8 +53,8 @@
   RecursiveDescent
   (recursive-descent [f]
     (sm/state-maybe (fn [& rules]
-                      (apply* (sm/state-maybe (fn [& parsed-values]
-                                                (apply* f (remove parsed-values ignore?))))
+                      (apply (sm/state-maybe (fn [& parsed-values]
+                                                (apply f (remove parsed-values ignore?))))
                               rules)))))
 
 (defn next-input-buffer [s]
@@ -142,7 +142,9 @@
                                              (fn [line-count s]
                                                (reduce s line-count
                                                        (fn [line-count c]
-                                                         (+ line-count ((= c "\n") 1 0))))))]
+                                                         (+ line-count (either (and (= c "\n")
+                                                                                    (maybe 1))
+                                                                               0))))))]
                       [(to-str str-list)
                        (either (update-in new-s [.values 'line-number]
                                           (fn [lc] (+ lc line-count)))
@@ -206,15 +208,15 @@
 (extend-type p/Union
   RecursiveDescent
   (recursive-descent [u]
-    (apply* (sm/state-maybe (fn [& rules]
-                              (apply* comp rules)))
+    (apply (sm/state-maybe (fn [& rules]
+                              (apply comp rules)))
             (.rules u))))
 
 (extend-type p/Cat
   RecursiveDescent
   (recursive-descent [u]
-    (apply* (sm/state-maybe (fn [& rules]
-                              (apply* (sm/state-maybe (fn [& parsed-values]
+    (apply (sm/state-maybe (fn [& rules]
+                              (apply (sm/state-maybe (fn [& parsed-values]
                                                         (remove parsed-values ignore?)))
                                       rules)))
             (.rules u))))
