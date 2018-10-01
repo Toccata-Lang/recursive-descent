@@ -1,7 +1,7 @@
 
-(add-ns p (git-dependency "https://github.com/Toccata-Lang/grammar.git"
-                          "grammar.toc"
-                          :sha "cb55c51"))
+(add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
+                             "grammar.toc"
+                             :sha "cb55c51"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
                            :sha "dc80090"))
@@ -26,7 +26,7 @@
 (defprotocol Ignored
   (ignore? [_] nothing))
 
-(extend-type p/get-state-value
+(extend-type grmr/get-state-value
   RecursiveDescent
   (recursive-descent [p]
     (sm/state-maybe
@@ -39,7 +39,7 @@
                                          (str "'" (.key p) "'"))]
                         (abort))))))))
 
-(extend-type p/update-state-value
+(extend-type grmr/update-state-value
   RecursiveDescent
   (recursive-descent [p]
     (sm/state-maybe
@@ -64,10 +64,13 @@
   (assert (instance? ParserState s))
   (let [input (.input s)]
     (for [new-text (first input)]
-      (-> s
-          (.curr-input new-text)
-          (.input (either (empty? new-text)
-                          (rest input)))))))
+      (let [new-text (either (and (instance? st/StreamEnd new-text)
+                                  (maybe ""))
+                             new-text)]
+        (-> s
+            (.curr-input new-text)
+            (.input (either (empty? new-text)
+                            (rest input))))))))
 
 (defn reader [n s]
   (assert (instance? ParserState s))
@@ -101,7 +104,7 @@
              (maybe [(list (subs text 0 length))
                      (.curr-input s (subs text length))])))))
 
-(extend-type p/parser-not-char
+(extend-type grmr/parser-not-char
   RecursiveDescent
   (recursive-descent [p]
     (sm/state-maybe
@@ -111,7 +114,7 @@
                         :when-not (= (.test-c p) c)]
                     [c new-parser-state]))))))
 
-(extend-type p/parser-char-range
+(extend-type grmr/parser-char-range
   RecursiveDescent
   (recursive-descent [p]
     (sm/state-maybe
@@ -123,7 +126,7 @@
                                  (inc (char-code (.higher p))))]
                     [c new-parser-state]))))))
 
-(extend-type p/parser-terminal
+(extend-type grmr/parser-terminal
   RecursiveDescent
   (recursive-descent [p]
     (let [term-str (.term-str p)
@@ -134,7 +137,7 @@
                                          :when (= text term-str)]
                                      [term-str new-parser-state])))))))
 
-(extend-type p/parser-term-fn
+(extend-type grmr/parser-term-fn
   RecursiveDescent
   (recursive-descent [p]
     (sm/state-maybe
@@ -153,19 +156,19 @@
                                           (fn [lc] (+ lc line-count)))
                                (assoc-in new-s [.values 'line-number] line-count))])))))))
 
-(extend-type p/repeat-rule
+(extend-type grmr/repeat-rule
   RecursiveDescent
   (recursive-descent [p]
     (map (.rule p) sm/recur)))
 
-(extend-type p/none-or-more-rule
+(extend-type grmr/none-or-more-rule
   RecursiveDescent
   (recursive-descent [p]
     (map (.rule p) (fn [rule]
                      (comp (sm/recur rule)
                            (sm/state-maybe []))))))
 
-(extend-type p/ignore-rule
+(extend-type grmr/ignore-rule
   Stringable
   (string-list [_] (list "ignored"))
   RecursiveDescent
@@ -179,24 +182,24 @@
                                              (ignore? [_] (maybe 'ignore))))
                                rule)))))
 
-(extend-type p/parser-always
+(extend-type grmr/parser-always
   RecursiveDescent
   (recursive-descent [p]
     (sm/state-maybe (sm/state-maybe (.v p)))))
 
-(extend-type p/parser-rule
+(extend-type grmr/parser-rule
   RecursiveDescent
   (recursive-descent [p]
     (.grammar p)))
 
-(extend-type p/recursive-parser-rule
+(extend-type grmr/recursive-parser-rule
   RecursiveDescent
   (recursive-descent [p]
     (for [parser (map (.grammar p) sm/new-sm)
           _ (sm/set-val (.name p) parser)]
       parser)))
 
-(extend-type p/recursion-rule
+(extend-type grmr/recursion-rule
   RecursiveDescent
   (recursive-descent [p]
     (sm/state-maybe
@@ -208,14 +211,14 @@
                                              (str "'" (.rule-name p) "'"))]
                             (abort))))))))
 
-(extend-type p/Union
+(extend-type grmr/Union
   RecursiveDescent
   (recursive-descent [u]
     (apply (sm/state-maybe (fn [& rules]
                               (apply comp rules)))
             (.rules u))))
 
-(extend-type p/Cat
+(extend-type grmr/Cat
   RecursiveDescent
   (recursive-descent [u]
     (apply (sm/state-maybe (fn [& rules]
@@ -241,7 +244,7 @@
 
 
 (defn parser [grammar]
-  (let [grammar (p/string-terminal grammar)
+  (let [grammar (grmr/string-terminal grammar)
         [grammar-parser recursive-rules] (extract ((fr/evaluate grammar recursive-descent) {}))]
     (fn
       ([input]
@@ -255,9 +258,10 @@
   ([s grammar] (parse-stream s grammar {}))
   ([s grammar values]
    (let [lazy-stream (lazy-list s)
-         grammar (p/string-terminal grammar)
+         grammar (grmr/string-terminal grammar)
          [grammar-parser recursive-rules] (extract ((fr/evaluate grammar recursive-descent) {}))]
      (st/state-stream (ParserState "" lazy-stream recursive-rules values)
                       (fn [stream-state]
                         (either (grammar-parser stream-state)
-                                [(st/StreamEnd nothing) st/empty-stream]))))))
+                                [(st/StreamEnd "")
+                                 (ParserState "" st/empty-stream recursive-rules values)]))))))
