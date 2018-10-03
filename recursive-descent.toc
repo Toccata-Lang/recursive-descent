@@ -18,7 +18,12 @@
   (assert (instance? HashMap values))
 
   Stringable
-  (string-list [_] (list "<ParserState>")))
+  (string-list [_] (list "<ParserState>"))
+
+  Collection
+  (empty? [_]
+    (and (empty? curr-input)
+         (empty? input))))
 
 (defprotocol RecursiveDescent
   (recursive-descent [_]))
@@ -263,5 +268,4 @@
      (st/state-stream (ParserState "" lazy-stream recursive-rules values)
                       (fn [stream-state]
                         (either (grammar-parser stream-state)
-                                [(st/StreamEnd "")
-                                 (ParserState "" st/empty-stream recursive-rules values)]))))))
+                                ["" (ParserState "" st/empty-stream recursive-rules values)]))))))
