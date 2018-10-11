@@ -4,13 +4,13 @@
                              :sha "cb55c51"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
-                           :sha "dc80090"))
+                           :sha "30c9181"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
                            :sha "9727acf"))
 (add-ns st (git-dependency "https://github.com/Toccata-Lang/stream.git"
                            "stream.toc"
-                           :sha "8a04d65"))
+                           :sha "af43750"))
 
 (deftype ParserState [curr-input input parser-fns values]
   (assert (instance? String curr-input))
@@ -69,13 +69,10 @@
   (assert (instance? ParserState s))
   (let [input (.input s)]
     (for [new-text (first input)]
-      (let [new-text (either (and (instance? st/StreamEnd new-text)
-                                  (maybe ""))
-                             new-text)]
-        (-> s
-            (.curr-input new-text)
-            (.input (either (empty? new-text)
-                            (rest input))))))))
+      (-> s
+          (.curr-input new-text)
+          (.input (either (empty? new-text)
+                          (rest input)))))))
 
 (defn reader [n s]
   (assert (instance? ParserState s))
@@ -262,10 +259,9 @@
 (defn parse-stream
   ([s grammar] (parse-stream s grammar {}))
   ([s grammar values]
-   (let [lazy-stream (lazy-list s)
-         grammar (grmr/string-terminal grammar)
+   (let [grammar (grmr/string-terminal grammar)
          [grammar-parser recursive-rules] (extract ((fr/evaluate grammar recursive-descent) {}))]
-     (st/state-stream (ParserState "" lazy-stream recursive-rules values)
+     (st/state-stream (ParserState "" s recursive-rules values)
                       (fn [stream-state]
                         (either (grammar-parser stream-state)
                                 ["" (ParserState "" st/empty-stream recursive-rules values)]))))))
