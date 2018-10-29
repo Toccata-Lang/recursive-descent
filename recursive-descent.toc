@@ -4,7 +4,7 @@
                              :sha "cb55c51"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
-                           :sha "30c9181"))
+                           :sha "d33cc65"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
                            :sha "9727acf"))
@@ -197,7 +197,7 @@
 (extend-type grmr/recursive-parser-rule
   RecursiveDescent
   (recursive-descent [p]
-    (for [parser (map (.grammar p) sm/new-sm)
+    (for [parser (.grammar p)
           _ (sm/set-val (.name p) parser)]
       parser)))
 
