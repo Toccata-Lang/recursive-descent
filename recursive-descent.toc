@@ -1,16 +1,16 @@
 
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "cb55c51"))
+                             :sha "1e280ff"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
-                           :sha "d33cc65"))
+                           :sha "f655efc"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
                            :sha "9727acf"))
 (add-ns st (git-dependency "https://github.com/Toccata-Lang/stream.git"
                            "stream.toc"
-                           :sha "af43750"))
+                           :sha "c778079"))
 
 (deftype ParserState [curr-input input parser-fns values]
   (assert (instance? String curr-input))
@@ -24,6 +24,9 @@
   (empty? [_]
     (and (empty? curr-input)
          (empty? input))))
+
+(defprotocol WrapInput
+  (wrap-input [_]))
 
 (defprotocol RecursiveDescent
   (recursive-descent [_]))
@@ -228,9 +231,6 @@
                                                         (remove parsed-values ignore?)))
                                       rules)))
             (.rules u))))
-
-(defprotocol WrapInput
-  (wrap-input [_]))
 
 (extend-type LazyList
   WrapInput
