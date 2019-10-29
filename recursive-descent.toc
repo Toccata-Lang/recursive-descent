@@ -1,7 +1,7 @@
 
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "964a824"))
+                             :sha "5a3a870"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
                            :sha "6782d7e"))
@@ -34,6 +34,16 @@
 (defprotocol Ignored
   (ignore? [_] nothing))
 
+(extend-type grmr/error-value
+  RecursiveDescent
+  (recursive-descent [p]
+    (sm/state-maybe
+     (for [file (sm/get-in-val [.values 'file-name] "<unkown file>")
+           line (sm/get-in-val [.values 'line-number] "<unkown line>")
+           :let [_ (print-err (.msg p) "at" file line)]
+           _ sm/zero-sm]
+       '_))))
+
 (extend-type grmr/get-state-value
   RecursiveDescent
   (recursive-descent [p]
@@ -45,7 +55,7 @@
                              [value parser-state]))
                       (let [_ (print-err "Could not get recursive descent state value"
                                          (str "'" (.key p) "'"))]
-                        (abort))))))))
+                        nothing)))))))
 
 (extend-type grmr/update-state-value
   RecursiveDescent
@@ -58,7 +68,7 @@
                         [old-value new-state])
                       (let [_ (print-err "Could not update recursive descent state value"
                                          (str "'" (.key p) "'"))]
-                        (abort))))))))
+                        nothing)))))))
 
 (extend-type Fn
   RecursiveDescent
@@ -214,7 +224,7 @@
                                (fn [p] (p s)))
                           (let [_ (print-err "No parser rule defined for "
                                              (str "'" (.rule-name p) "'"))]
-                            (abort))))))))
+                            nothing)))))))
 
 (extend-type grmr/Union
   RecursiveDescent
