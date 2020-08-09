@@ -39,11 +39,10 @@
   (recursive-descent [p]
     (sm/state-maybe
      (for [file (sm/get-in-val [.values 'file-name] "<unkown file>")
-           line (sm/get-in-val [.values 'line-number] "<unkown line>")
-           :let [_ (print-err (.msg p) "at" file line)]
-           ;; TODO: this doesn't abort properly
-           _ sm/zero-sm]
-       '_))))
+           line (sm/get-in-val [.values 'line-number] "<unkown line>")]
+       (do
+         (print-err (.msg p) "at" file line)
+         (abort))))))
 
 (extend-type grmr/get-state-value
   RecursiveDescent
