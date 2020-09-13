@@ -1,16 +1,16 @@
 
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "fa3764b"))
+                             :sha "daeac91"))
 (add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
                            "state-maybe.toc"
-                           :sha "e843c60"))
+                           :sha "27e7715"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
-                           :sha "190941b"))
+                           :sha "2703619"))
 (add-ns st (git-dependency "https://github.com/Toccata-Lang/stream.git"
                            "stream.toc"
-                           :sha "c778079"))
+                           :sha "4aa15f9"))
 
 (deftype ParserState [curr-input input parser-fns values]
   (assert (instance? String curr-input))
@@ -183,18 +183,20 @@
                      (comp (sm/recur rule)
                            (sm/state-maybe []))))))
 
+(def ignored (reify
+               Stringable
+               (string-list [_] (list "<Ignored>"))
+
+               Ignored
+               (ignore? [_] (maybe 'ignore))))
+
 (extend-type grmr/ignore-rule
   Stringable
   (string-list [_] (list "ignored"))
   RecursiveDescent
   (recursive-descent [p]
     (map (.rule p) (fn [rule]
-                     (apply-to (constantly (reify
-                                             Stringable
-                                             (string-list [_] (list "<Ignored>"))
-
-                                             Ignored
-                                             (ignore? [_] (maybe 'ignore))))
+                     (apply-to (constantly ignored)
                                rule)))))
 
 (extend-type grmr/parser-always
