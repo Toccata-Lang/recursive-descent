@@ -1,16 +1,16 @@
 
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "daeac91"))
-(add-ns sm (git-dependency "https://github.com/Toccata-Lang/state-maybe.git"
-                           "state-maybe.toc"
-                           :sha "27e7715"))
+                             :sha "4846add"))
 (add-ns fr (git-dependency "https://github.com/Toccata-Lang/Free.git"
                            "free.toc"
-                           :sha "2703619"))
+                           :sha "5c353f2"))
 (add-ns st (git-dependency "https://github.com/Toccata-Lang/stream.git"
                            "stream.toc"
                            :sha "4aa15f9"))
+(add-ns se (git-dependency "https://github.com/Toccata-Lang/state-error.git"
+                           "state-error.toc"
+                           :sha "58ec9a4"))
 
 (deftype ParserState [curr-input input parser-fns values]
   (assert (instance? String curr-input))
@@ -34,47 +34,68 @@
 (defprotocol Ignored
   (ignore? [_] nothing))
 
+(extend-type grmr/parser-get-text
+  RecursiveDescent
+  (recursive-descent [p]
+    (se/state-error
+     (se/new-se (fn [s]
+                  [(.curr-input s) s])))))
+
 (extend-type grmr/error-value
   RecursiveDescent
   (recursive-descent [p]
-    (sm/state-maybe
-     (for [file (sm/get-in-val [.values 'file-name] "<unkown file>")
-           line (sm/get-in-val [.values 'line-number] "<unkown line>")]
-       (do
-         (print-err (.msg p) "at" file line)
-         (abort))))))
+    (se/state-error
+     (se/new-se (fn [s]
+                  (se/Error (.msg p) s))))))
+
+(extend-type grmr/error-catcher
+  RecursiveDescent
+  (recursive-descent [p]
+    (map (fr/evaluate (.rule p) recursive-descent)
+         (fn [rule]
+           (se/new-se (fn [s]
+                        (let [parse-result (rule s)]
+                          (either (map (instance? se/Error parse-result)
+                                       (fn [e]
+                                         ((.handler p) e s)))
+                                  parse-result))))))))
 
 (extend-type grmr/get-state-value
   RecursiveDescent
   (recursive-descent [p]
-    (sm/state-maybe
-     (sm/new-sm (fn [parser-state]
+    (se/state-error
+     (se/new-se (fn [parser-state]
                   (assert (instance? ParserState parser-state))
-                  (or (map (get-in parser-state [.values (.key p)])
-                           (fn [value]
-                             [value parser-state]))
-                      (let [_ (print-err "Could not get recursive descent state value"
-                                         (str "'" (.key p) "'"))]
-                        nothing)))))))
+                  ;; (assert-result r (instance? se/InvokeResult r))
+
+                  (either (map (get-in parser-state [.values (.key p)])
+                               (fn [value]
+                                 [value parser-state]))
+                          (let [_ (print-err "Could not get recursive descent state value"
+                                             (str "'" (.key p) "'"))]
+                            se/Failure)))))))
 
 (extend-type grmr/update-state-value
   RecursiveDescent
   (recursive-descent [p]
-    (sm/state-maybe
-     (sm/new-sm (fn [parser-state]
+    (se/state-error
+     (se/new-se (fn [parser-state]
                   (assert (instance? ParserState parser-state))
-                  (or (for [new-state (update-in parser-state [.values (.key p)] (.f p))
-                            old-value (get-in parser-state [.values (.key p)])]
-                        [old-value new-state])
-                      (let [_ (print-err "Could not update recursive descent state value"
-                                         (str "'" (.key p) "'"))]
-                        nothing)))))))
+                  ;; (assert-result r (instance? se/InvokeResult r))
+
+                  (either (for [new-state (update-in parser-state [.values (.key p)] (.f p))
+                                old-value (get-in parser-state [.values (.key p)])]
+                            [old-value new-state])
+                          (let [_ (print-err "Could not update recursive descent state value"
+                                             (str "'" (.key p) "'"))]
+                            ;; TODO: change all these to se/Error values
+                            se/Failure)))))))
 
 (extend-type Fn
   RecursiveDescent
   (recursive-descent [f]
-    (sm/state-maybe (fn [& rules]
-                      (apply (sm/state-maybe (fn [& parsed-values]
+    (se/state-error (fn [& rules]
+                      (apply (se/state-error (fn [& parsed-values]
                                                (apply f (remove parsed-values ignore?))))
                              rules)))))
 
@@ -122,66 +143,78 @@
 (extend-type grmr/parser-not-char
   RecursiveDescent
   (recursive-descent [p]
-    (sm/state-maybe
-     (sm/new-sm (fn [parser-state]
+    (se/state-error
+     (se/new-se (fn [parser-state]
                   (assert (instance? ParserState parser-state))
-                  (for [[c new-parser-state] (reader 1 parser-state)
-                        :when-not (= (.test-c p) c)]
-                    [c new-parser-state]))))))
+                  ;; (assert-result r (instance? se/InvokeResult r))
+
+                  (either (for [[c new-parser-state] (reader 1 parser-state)
+                                :when-not (= (.test-c p) c)]
+                            [c new-parser-state])
+                          se/Failure))))))
 
 (extend-type grmr/parser-char-range
   RecursiveDescent
   (recursive-descent [p]
-    (sm/state-maybe
-     (sm/new-sm (fn [parser-state]
+    (se/state-error
+     (se/new-se (fn [parser-state]
                   (assert (instance? ParserState parser-state))
-                  (for [[c new-parser-state] (reader 1 parser-state)
-                        :when (< (dec (char-code (.lower p)))
-                                 (char-code c)
-                                 (inc (char-code (.higher p))))]
-                    [c new-parser-state]))))))
+                  ;; (assert-result r (instance? se/InvokeResult r))
+
+                  (either (for [[c new-parser-state] (reader 1 parser-state)
+                                :when (< (dec (char-code (.lower p)))
+                                         (char-code c)
+                                         (inc (char-code (.higher p))))]
+                            [c new-parser-state])
+                          se/Failure))))))
 
 (extend-type grmr/parser-terminal
   RecursiveDescent
   (recursive-descent [p]
     (let [term-str (.term-str p)
           term-count (count term-str)]
-      (sm/state-maybe (sm/new-sm (fn [parser-state]
+      (se/state-error (se/new-se (fn [parser-state]
                                    (assert (instance? ParserState parser-state))
-                                   (for [[text new-parser-state] (reader term-count parser-state)
-                                         :when (= text term-str)]
-                                     [term-str new-parser-state])))))))
+                                   ;; (assert-result r (instance? se/InvokeResult r))
+
+                                   (either (for [[text new-parser-state] (reader term-count parser-state)
+                                                 :when (= text term-str)]
+                                             [term-str new-parser-state])
+                                           se/Failure)))))))
 
 (extend-type grmr/parser-term-fn
   RecursiveDescent
   (recursive-descent [p]
-    (sm/state-maybe
-     (sm/new-sm (fn [s]
+    (se/state-error
+     (se/new-se (fn [s]
                   (assert (instance? ParserState s))
-                  (for [[str-list new-s] (fn-reader (.f p) s)]
-                    (let [line-count (reduce str-list 0
-                                             (fn [line-count s]
-                                               (reduce s line-count
-                                                       (fn [line-count c]
-                                                         (+ line-count (either (and (= c "\n")
-                                                                                    (maybe 1))
-                                                                               0))))))]
-                      [(to-str str-list)
-                       (either (update-in new-s [.values 'line-number]
-                                          (fn [lc] (+ lc line-count)))
-                               (assoc-in new-s [.values 'line-number] line-count))])))))))
+                  ;; (assert-result r (instance? se/InvokeResult r))
+
+                  (either (for [[str-list new-s] (fn-reader (.f p) s)]
+                            (let [line-count (reduce str-list 0
+                                                     (fn [line-count s]
+                                                       (reduce s line-count
+                                                               (fn [line-count c]
+                                                                 (+ line-count (either (and (= c "\n")
+                                                                                            (maybe 1))
+                                                                                       0))))))]
+                              [(to-str str-list)
+                               (either (update-in new-s [.values 'line-number]
+                                                  (fn [lc] (+ lc line-count)))
+                                       (assoc-in new-s [.values 'line-number] line-count))]))
+                          se/Failure))))))
 
 (extend-type grmr/repeat-rule
   RecursiveDescent
   (recursive-descent [p]
-    (map (.rule p) sm/recur)))
+    (map (.rule p) se/recur)))
 
 (extend-type grmr/none-or-more-rule
   RecursiveDescent
   (recursive-descent [p]
     (map (.rule p) (fn [rule]
-                     (comp (sm/recur rule)
-                           (sm/state-maybe []))))))
+                     (comp (se/recur rule)
+                           (se/state-error []))))))
 
 (def ignored (reify
                Stringable
@@ -202,7 +235,7 @@
 (extend-type grmr/parser-always
   RecursiveDescent
   (recursive-descent [p]
-    (sm/state-maybe (sm/state-maybe (.v p)))))
+    (se/state-error (se/state-error (.v p)))))
 
 (extend-type grmr/parser-rule
   RecursiveDescent
@@ -213,33 +246,35 @@
   RecursiveDescent
   (recursive-descent [p]
     (for [parser (.grammar p)
-          _ (sm/set-val (.name p) parser)]
+          _ (se/set-val (.name p) parser)]
       parser)))
 
 (extend-type grmr/recursion-rule
   RecursiveDescent
   (recursive-descent [p]
-    (sm/state-maybe
-     (sm/new-sm (fn [s]
+    (se/state-error
+     (se/new-se (fn [s]
                   (assert (instance? ParserState s))
+                  ;; (assert-result r (instance? se/InvokeResult r))
+
                   (either (map (get-in s [.parser-fns (.rule-name p)])
                                (fn [p] (p s)))
                           (let [_ (print-err "No parser rule defined for "
                                              (str "'" (.rule-name p) "'"))]
-                            nothing)))))))
+                            se/Failure)))))))
 
 (extend-type grmr/Union
   RecursiveDescent
   (recursive-descent [u]
-    (apply (sm/state-maybe (fn [& rules]
+    (apply (se/state-error (fn [& rules]
                               (apply comp rules)))
             (.rules u))))
 
 (extend-type grmr/Cat
   RecursiveDescent
   (recursive-descent [u]
-    (apply (sm/state-maybe (fn [& rules]
-                              (apply (sm/state-maybe (fn [& parsed-values]
+    (apply (se/state-error (fn [& rules]
+                              (apply (se/state-error (fn [& parsed-values]
                                                         (remove parsed-values ignore?)))
                                       rules)))
             (.rules u))))
@@ -259,21 +294,20 @@
 
 (defn parser [grammar]
   (let [grammar (grmr/string-terminal grammar)
-        [grammar-parser recursive-rules] (extract ((fr/evaluate grammar recursive-descent) {}))]
+        [grammar-parser recursive-rules] ((fr/evaluate grammar recursive-descent) {})]
     (fn
       ([input]
-       (flat-map (grammar-parser (ParserState "" (wrap-input input) recursive-rules {}))
-                 first))
+       (grammar-parser (ParserState "" (wrap-input input) recursive-rules {})))
       ([values input]
-       (flat-map (grammar-parser (ParserState "" (wrap-input input) recursive-rules values))
-                 first)))))
+       (grammar-parser (ParserState "" (wrap-input input) recursive-rules values))))))
 
-(defn parse-stream
-  ([s grammar] (parse-stream s grammar {}))
-  ([s grammar values]
-   (let [grammar (grmr/string-terminal grammar)
-         [grammar-parser recursive-rules] (extract ((fr/evaluate grammar recursive-descent) {}))]
-     (st/state-stream (ParserState "" s recursive-rules values)
-                      (fn [stream-state]
-                        (either (grammar-parser stream-state)
-                                ["" (ParserState "" st/empty-stream recursive-rules values)]))))))
+;; TODO: may no longer be correct after switching to state-error
+;; (defn parse-stream
+;;   ([s grammar] (parse-stream s grammar {}))
+;;   ([s grammar values]
+;;    (let [grammar (grmr/string-terminal grammar)
+;;          [grammar-parser recursive-rules] ((fr/evaluate grammar recursive-descent) {})]
+;;      (st/state-stream (ParserState "" s recursive-rules values)
+;;                       (fn [stream-state]
+;;                         (either (grammar-parser stream-state)
+;;                                 ["" (ParserState "" st/empty-stream recursive-rules values)]))))))
