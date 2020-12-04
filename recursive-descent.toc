@@ -10,7 +10,7 @@
                            :sha "4aa15f9"))
 (add-ns se (git-dependency "https://github.com/Toccata-Lang/state-error.git"
                            "state-error.toc"
-                           :sha "58ec9a4"))
+                           :sha "ccf2e52"))
 
 (deftype ParserState [curr-input input parser-fns values]
   (assert (instance? String curr-input))
@@ -267,8 +267,8 @@
   RecursiveDescent
   (recursive-descent [u]
     (apply (se/state-error (fn [& rules]
-                              (apply comp rules)))
-            (.rules u))))
+                             (apply comp rules)))
+           (.rules u))))
 
 (extend-type grmr/Cat
   RecursiveDescent
