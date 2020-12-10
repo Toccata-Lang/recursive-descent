@@ -10,7 +10,7 @@
                            :sha "4aa15f9"))
 (add-ns se (git-dependency "https://github.com/Toccata-Lang/state-error.git"
                            "state-error.toc"
-                           :sha "ccf2e52"))
+                           :sha "22f30db"))
 
 (deftype ParserState [curr-input input parser-fns values]
   (assert (instance? String curr-input))
