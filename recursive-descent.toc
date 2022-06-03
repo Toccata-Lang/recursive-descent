@@ -10,7 +10,7 @@
                            :sha "4aa15f9"))
 (add-ns se (git-dependency "https://github.com/Toccata-Lang/state-error.git"
                            "state-error.toc"
-                           :sha "3928103"))
+                           :sha "f3a18dc"))
 
 (deftype ParserState [curr-input input parser-fns values]
   (assert (instance? String curr-input))
@@ -109,6 +109,7 @@
 
 (defn reader [n s]
   (assert (instance? ParserState s))
+
   (let [text (.curr-input s)
         text-length (count text)]
     (or (and (< n text-length)
@@ -129,6 +130,7 @@
 (defn fn-reader [f s]
   (assert (instance? Fn f))
   (assert (instance? ParserState s))
+
   (let [text (.curr-input s)
         length (f text)]
     (or (and (or (= length (count text)))
