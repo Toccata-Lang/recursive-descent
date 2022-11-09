@@ -2,54 +2,153 @@
 ;; Components to build the grammar out of
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "cb55c51"))
+                             :sha "16944a7"))
 (add-ns rd (module "recursive-descent.toc"))
 
-(defn scan-line [s]
-  ;; all chars except \n
-  (assert (instance? String s))
-  (inline C Integer "
-    char *str = NULL;
-    int64_t strLen;
-    if (s_0->type == StringBufferType) {
-      str = ((String *)s_0)->buffer;
-      strLen = ((String *)s_0)->len;
-    } else if (s_0->type == SubStringType) {
-      str = ((SubString *)s_0)->buffer;
-      strLen = ((SubString *)s_0)->len;
-    }
-    int64_t len;
-    for (len = 0; len < strLen && str[len] != 10;)
-       len++;
-    dec_and_free(s_0, 1);
-    return(integerValue(len));
-"))
-
-(def line
-  (grmr/rule "read-line"
-             (grmr/apply-fn identity
-                            (grmr/optional (grmr/term-fn scan-line))
-                            (grmr/ignore "\n"))))
-
-(def post (grmr/none-or-more line))
-
-(def generate-post
-  (rd/parser post))
-
-(def input-text
-"---
-layout: post
-tags: [core]
-comments: true
----
-
-### We're rolling now
-")
+(defn test [result matched remaining file line]
+  (either (for [_ (flat-map (get-in result [.state .curr-input])
+                            (partial = remaining))
+                _ (= (.value result) matched)]
+            '_)
+          (do
+            (print-err 'Failed-at file line
+                       "\nvalue" (get-in result [.value])
+                       "\n\nmatched" matched
+                       "\n\nmatched comp" (flat-map (get result .value)
+                                                    (partial = matched))
+                       "\n\ncurr-input" (get-in result [.state .curr-input])
+                       "\n\nneeded remaining" remaining
+                       "\n\nremaining comp" (flat-map (get-in result [.state .curr-input])
+                                                      (partial = remaining))
+                       )
+            (abort))))
 
 (main [_]
-      (map (generate-post input-text)
-           (fn [lines]
-             (or (= 7 (count lines))
-                 (do
-                   (print-err 'fail!!! (count lines))
-                   (abort))))))
+  (test (rd/parse (rd/parser "a")
+                  (rd/ParserState "ab" empty-list {}))
+        "a" "b"
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/all "a" "b"))
+                  (rd/ParserState "ab" empty-list {}))
+        "b" ""
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/any "a" "b"))
+                  (rd/ParserState "ab" empty-list {}))
+        "a" "b"
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/any "a" "b"))
+                  (rd/ParserState "ba" empty-list {}))
+        "b" "a"
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/all (grmr/any "a" "b")
+                                       (grmr/any "a" "b")))
+                  (rd/ParserState "ba" empty-list {}))
+        "a" ""
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/any (grmr/all "a" "b")
+                                       (grmr/all "b" "a")))
+                  (rd/ParserState "ba" empty-list {}))
+        "a" ""
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser "ba")
+                  (rd/ParserState "ba" empty-list {}))
+        "ba" ""
+        _FILE_ _LINE_)
+
+  (test (rd/parse (apply-to (fn [x v]
+                              (conj v x))
+                            (grmr/term "b")
+                            (grmr/parser-always []))
+                  (rd/ParserState "ba" empty-list {}))
+        ["b"] "a"
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/one-or-more "a"))
+                  (rd/ParserState "aa" empty-list {}))
+        (list "a" "a") ""
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/one-or-more "a"))
+                  (rd/ParserState "aax" empty-list {}))
+        (list "a" "a") "x"
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/none-or-more "a"))
+                  (rd/ParserState "aa" empty-list {}))
+        (list "a" "a") ""
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/none-or-more "x"))
+                  (rd/ParserState "aax" empty-list {}))
+        empty-list "aax"
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (grmr/none-or-more grmr/alpha))
+                  (rd/ParserState "" (list "abc" "d1x") {}))
+        (list "a" "b" "c" "d") "1x"
+        _FILE_ _LINE_)
+
+  (test (rd/parse (rd/parser (apply-to (fn [start]
+                                         (symbol (str start)))
+                                       grmr/alpha
+                                       (grmr/ignore "/")))
+                  (rd/ParserState "a/bcd" empty-list {}))
+        'a "bcd"
+        _FILE_ _LINE_)
+
+  (print-err 'done))
+
+;; (defn scan-line [s]
+;;   ;; all chars except \n
+;;   (assert (instance? String s))
+;;   (inline C Integer "
+;;     char *str = NULL;
+;;     int64_t strLen;
+;;     if (s_0->type == StringBufferType) {
+;;       str = ((String *)s_0)->buffer;
+;;       strLen = ((String *)s_0)->len;
+;;     } else if (s_0->type == SubStringType) {
+;;       str = ((SubString *)s_0)->buffer;
+;;       strLen = ((SubString *)s_0)->len;
+;;     }
+;;     int64_t len;
+;;     for (len = 0; len < strLen && str[len] != 10;)
+;;        len++;
+;;     dec_and_free(s_0, 1);
+;;     return(integerValue(len));
+;; "))
+
+;; (def line
+;;   (grmr/rule "read-line"
+;;              (grmr/apply-fn identity
+;;                             (grmr/optional (grmr/term-fn scan-line))
+;;                             (grmr/ignore "\n"))))
+
+;; (def post (grmr/none-or-more line))
+
+;; (def generate-post
+;;   (rd/parser post))
+
+;; (def input-text
+;; "---
+;; layout: post
+;; tags: [core]
+;; comments: true
+;; ---
+
+;; ### We're rolling now
+;; ")
+
+;; (main [_]
+;;       (map (generate-post input-text)
+;;            (fn [lines]
+;;              (or (= 7 (count lines))
+;;                  (do
+;;                    (print-err 'fail!!! (count lines))
+;;                    (abort))))))
