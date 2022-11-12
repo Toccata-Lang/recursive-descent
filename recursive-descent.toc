@@ -1,8 +1,10 @@
 
-
+(add-ns se (git-dependency "https://github.com/Toccata-Lang/state-error.git"
+                           "state-error.toc"
+                           :sha "43bc6f4"))
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "16944a7"))
+                             :sha "4846add"))
 
 (deftype ParserState [curr-input input values]
   (assert (instance? String curr-input))
@@ -95,10 +97,16 @@
     (embed x)))
 
 (defprotocol Parser
+  (terminate-string [s]
+    s)
+  
   (make-parser [r]
-    r)
+    (assert-result r (instance? se/StateError r))
+    (se/state-error r))
+
   (collapse-branches [r]
     r)
+
   (parse [r state]
     (assert (instance? ParserState state))))
 
@@ -112,8 +120,11 @@
 
 (extend-type String
   Parser
+  (terminate-string [s]
+    (grmr/parser-terminal s))
+  
   (make-parser [s]
-    (grmr/term s)))
+    (se/state-error (grmr/term s))))
 
 (extend-type grmr/parser-terminal
   Parser
@@ -195,13 +206,27 @@
 
 (extend-type grmr/parser-rule
   Parser
+  (collapse-branches [r]
+    (deliver (.name r) (.grammar r))
+    (.grammar r))
+
   (make-parser [r]
-    (.grammar r)))
+    (comp (map (se/get-val (.name r))
+               (fn [prom]
+                 (.name r prom)))
+          (se/state-error (.grammar r)))))
 
 (extend-type grmr/recursion-rule
   Parser
+  (collapse-branches [r]
+    (.prom r))
+
   (make-parser [r]
-    (.prom r)))
+    (comp (map (se/get-val (.rule-name r))
+               (partial .prom r))
+          (map (se/set-val (.rule-name r) (.prom r))
+               (fn [_]
+                 r)))))
 
 (extend-type grmr/All-rule
   Parser
@@ -213,9 +238,13 @@
                                    (list (map r (fn [inner-r]
                                                   (grmr/All-rule (comp [inner-r] l)))))
 
+                                   (instance? grmr/All-rule r)
+                                   (comp (.rules r) l)
+
                                    (conj l r))))
         vec
-        grmr/All-rule))
+        grmr/All-rule
+        se/state-error))
 
   (collapse-branches [r]
     (either (and (= 1 (count (.rules r)))
@@ -305,5 +334,6 @@
                          state))))
 
 (defn parser [grammar]
-  (hylo make-parser collapse-branches
-        grammar))
+  (let [grammar (ana terminate-string grammar)
+        [raw] ((cata make-parser grammar se/state-error) {})]
+    (cata collapse-branches raw)))

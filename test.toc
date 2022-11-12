@@ -2,7 +2,7 @@
 ;; Components to build the grammar out of
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "16944a7"))
+                             :sha "4846add"))
 (add-ns rd (module "recursive-descent.toc"))
 
 (defn test [result matched remaining file line]
@@ -12,7 +12,8 @@
             '_)
           (do
             (print-err 'Failed-at file line
-                       "\nvalue" (get-in result [.value])
+                       "\n" 'result result
+                       "\n\nvalue" (get result .value)
                        "\n\nmatched" matched
                        "\n\nmatched comp" (flat-map (get result .value)
                                                     (partial = matched))
@@ -102,6 +103,12 @@
         'a "bcd"
         _FILE_ _LINE_)
 
+  (test (rd/parse (rd/parser (grmr/parser-rule "looper"
+                                               (grmr/any (grmr/all "z" (grmr/recurse "looper"))
+                                                         (grmr/always []))))
+                  (rd/ParserState "zzzbcd" empty-list {}))
+        [] "bcd"
+        _FILE_ _LINE_)
   (print-err 'done))
 
 ;; (defn scan-line [s]
