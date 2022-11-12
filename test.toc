@@ -2,7 +2,7 @@
 ;; Components to build the grammar out of
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "4846add"))
+                             :sha "4b49f11"))
 (add-ns rd (module "recursive-descent.toc"))
 
 (defn test [result matched remaining file line]

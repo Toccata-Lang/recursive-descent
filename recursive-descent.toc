@@ -4,7 +4,7 @@
                            :sha "43bc6f4"))
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "4846add"))
+                             :sha "4b49f11"))
 
 (deftype ParserState [curr-input input values]
   (assert (instance? String curr-input))
@@ -212,8 +212,7 @@
 
   (make-parser [r]
     (comp (map (se/get-val (.name r))
-               (fn [prom]
-                 (.name r prom)))
+               (partial .name r))
           (se/state-error (.grammar r)))))
 
 (extend-type grmr/recursion-rule
@@ -331,6 +330,15 @@
                  (fn [val]
                    (ParserMatch val (assoc-in state [.values (.key r)] ((.f r) val)))))
             (ParserError (str "No value for key '" (.key r) "' found.")
+                         state))))
+
+(extend-type grmr/parser-get-text
+  Parser
+  (parse [r state]
+    (either (map (get state .curr-input)
+                 (fn [val]
+                   (ParserMatch val state)))
+            (ParserError "Invalid state. Missing .curr-input"
                          state))))
 
 (defn parser [grammar]
