@@ -4,7 +4,7 @@
                            :sha "43bc6f4"))
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "4b49f11"))
+                             :sha "77a3dfa"))
 
 (deftype ParserState [curr-input input values]
   (assert (instance? String curr-input))
@@ -206,14 +206,15 @@
 
 (extend-type grmr/parser-rule
   Parser
-  (collapse-branches [r]
-    (deliver (.name r) (.grammar r))
-    (.grammar r))
+  (parse [r s]
+    (ParserError (str "Un-collapsed rule " (.name r))
+                 s))
 
-  (make-parser [r]
-    (comp (map (se/get-val (.name r))
-               (partial .name r))
-          (se/state-error (.grammar r)))))
+  (collapse-branches [r]
+    (cond (instance? grmr/recursion-rule (.name r))
+          (deliver (.prom (.name r)) (.grammar r))
+          '_)
+    (.grammar r)))
 
 (extend-type grmr/recursion-rule
   Parser
@@ -261,13 +262,20 @@
     (cond (empty? (.rules r))
           (ParserError (str "Invalid parser " _FILE_ " " _LINE_) state)
 
-          (reduce (.rules r) (ParserIgnore state)
-                  (fn [result inner-r]
-                    (cond (or (instance? ParserMatch result)
-                              (instance? ParserIgnore result))
-                          (parse inner-r (.state result))
+          (reduce (.rules r) (ParserMatch [] state)
+                  (fn [results inner-r]
+                    (cond (or (instance? ParserIgnore results)
+                              (instance? ParserMatch results))
+                          (let [inn-res (parse inner-r (.state results))]
+                            (cond (instance? ParserMatch inn-res)
+                                  (.value inn-res (conj (.value results) (.value inn-res)))
 
-                          result))))))
+                                  (instance? ParserIgnore inn-res)
+                                  (.state results (.state inn-res))
+
+                                  inn-res))
+
+                          results))))))
 
 (extend-type grmr/Any-rule
   Parser
@@ -341,7 +349,67 @@
             (ParserError "Invalid state. Missing .curr-input"
                          state))))
 
+(defn fn-reader [f s]
+  (assert (instance? Fn f))
+  (assert (instance? ParserState s))
+
+  (let [text (.curr-input s)
+        length (f text)]
+    (or (and (or (= length (count text)))
+             (for [new-s (next-input-buffer s)
+                   [tail final-s] (fn-reader f new-s)]
+               [(cons text tail) final-s]))
+        (and (< 0 length)
+             (maybe [(list (subs text 0 length))
+                     (.curr-input s (subs text length))])))))
+
+(extend-type grmr/parser-term-fn
+  Parser
+  (parse [p s]
+    (either (for [[str-list new-s] (fn-reader (.f p) s)]
+              (let [line-count (reduce str-list 0
+                                       (fn [line-count s]
+                                         (reduce s line-count
+                                                 (fn [line-count c]
+                                                   (+ line-count (either (and (= c "\n")
+                                                                              (maybe 1))
+                                                                         0))))))]
+                (ParserMatch (to-str str-list)
+                             (either (update-in new-s [.values 'line-number]
+                                                (fn [lc] (+ lc line-count)))
+                                     (assoc-in new-s [.values 'line-number] line-count)))))
+            parser-fail)))
+
+(extend-type grmr/error-value
+  Parser
+  (parse [p state]
+    (ParserError (.msg p) state)))
+
+(defprotocol WrapInput
+  (wrap-input [x]
+    x))
+
+(extend-type String
+  WrapInput
+  (wrap-input [x] (list x)))
+
 (defn parser [grammar]
   (let [grammar (ana terminate-string grammar)
-        [raw] ((cata make-parser grammar se/state-error) {})]
-    (cata collapse-branches raw)))
+        [raw] ((cata make-parser grammar se/state-error) {})
+        grammar-parser (cata collapse-branches raw)]
+    (fn
+      ([input]
+       (parse grammar-parser (ParserState "" (wrap-input input) {})))
+      ([values input]
+       (parse grammar-parser (ParserState "" (wrap-input input) values))))))
+
+;; TODO: may no longer be correct after switching to state-error
+;; (defn parse-stream
+;;   ([s grammar] (parse-stream s grammar {}))
+;;   ([s grammar values]
+;;    (let [grammar (grmr/string-terminal grammar)
+;;          [grammar-parser recursive-rules] ((fr/evaluate grammar recursive-descent) {})]
+;;      (st/state-stream (ParserState "" s recursive-rules values)
+;;                       (fn [stream-state]
+;;                         (either (grammar-parser stream-state)
+;;                                 ["" (ParserState "" st/empty-stream recursive-rules values)]))))))
