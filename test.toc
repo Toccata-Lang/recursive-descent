@@ -2,12 +2,13 @@
 ;; Components to build the grammar out of
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "77a3dfa"))
+                             :sha "7cddf1e"))
 (add-ns rd (module "recursive-descent.toc"))
 
 (defn test [result matched remaining file line]
-  (either (for [_ (flat-map (get-in result [.state .curr-input])
-                            (partial = remaining))
+  (either (for [curr (get-in result [.state .curr-input])
+                inp (get-in result [.state .input])
+                _ (= remaining (str curr (to-str inp)))
                 _ (= (.value result) matched)]
             '_)
           (do
@@ -17,7 +18,9 @@
                        "\n\nmatched" matched
                        "\n\nmatched comp" (flat-map (get result .value)
                                                     (partial = matched))
-                       "\n\ncurr-input" (get-in result [.state .curr-input])
+                       "\n\ncurr-input" (apply-to str
+                                                  (get-in result [.state .curr-input])
+                                                  (map (get-in result [.state .input]) to-str))
                        "\n\nneeded remaining" remaining
                        "\n\nremaining comp" (flat-map (get-in result [.state .curr-input])
                                                       (partial = remaining))
@@ -25,89 +28,79 @@
             (abort))))
 
 (main [_]
-  (test (rd/parse (rd/parser "a")
-                  (rd/ParserState "ab" empty-list {}))
+  (test ((rd/parser "a") "ab")
         "a" "b"
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/all "a" "b"))
-                  (rd/ParserState "ab" empty-list {}))
-        "b" ""
+  (test ((rd/parser (grmr/all "a" "b")) "ab")
+        ["a" "b"] ""
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/any "a" "b"))
-                  (rd/ParserState "ab" empty-list {}))
+  (test ((rd/parser (grmr/any "a" "b")) "ab")
         "a" "b"
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/any "a" "b"))
-                  (rd/ParserState "ba" empty-list {}))
+  (test ((rd/parser (grmr/any "a" "b")) "ba")
         "b" "a"
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/all (grmr/any "a" "b")
-                                       (grmr/any "a" "b")))
-                  (rd/ParserState "ba" empty-list {}))
-        "a" ""
+  (test ((rd/parser (grmr/all (grmr/any "y" "b")
+                              (grmr/any "a" "x")))
+         "ba")
+        ["b" "a"] ""
+        _FILE_ _LINE_)
+  
+  (test ((rd/parser (grmr/any (grmr/all "a" "b")
+                              (grmr/all "b" "a")))
+         "ba")
+        ["b" "a"] ""
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/any (grmr/all "a" "b")
-                                       (grmr/all "b" "a")))
-                  (rd/ParserState "ba" empty-list {}))
-        "a" ""
-        _FILE_ _LINE_)
-
-  (test (rd/parse (rd/parser "ba")
-                  (rd/ParserState "ba" empty-list {}))
+  (test ((rd/parser "ba") "ba")
         "ba" ""
         _FILE_ _LINE_)
 
-  (test (rd/parse (apply-to (fn [x v]
-                              (conj v x))
-                            (grmr/term "b")
-                            (grmr/parser-always []))
-                  (rd/ParserState "ba" empty-list {}))
+  (test ((rd/parser (apply-to (fn this-fn [x v]
+                                 (conj v x))
+                               (grmr/term "b")
+                               (grmr/parser-always [])))
+         "ba")
         ["b"] "a"
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/one-or-more "a"))
-                  (rd/ParserState "aa" empty-list {}))
+  (test ((rd/parser (grmr/one-or-more "a")) "aa")
         (list "a" "a") ""
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/one-or-more "a"))
-                  (rd/ParserState "aax" empty-list {}))
+  (test ((rd/parser (grmr/one-or-more "a")) "aax")
         (list "a" "a") "x"
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/none-or-more "a"))
-                  (rd/ParserState "aa" empty-list {}))
+  (test ((rd/parser (grmr/none-or-more "a")) "aa")
         (list "a" "a") ""
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/none-or-more "x"))
-                  (rd/ParserState "aax" empty-list {}))
+  (test ((rd/parser (grmr/none-or-more "x")) "aax")
         empty-list "aax"
         _FILE_ _LINE_)
-
-  (test (rd/parse (rd/parser (grmr/none-or-more grmr/alpha))
-                  (rd/ParserState "" (list "abc" "d1x") {}))
+  
+  (test ((rd/parser (grmr/none-or-more grmr/alpha)) "abcd1x")
         (list "a" "b" "c" "d") "1x"
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (apply-to (fn [start]
-                                         (symbol (str start)))
-                                       grmr/alpha
-                                       (grmr/ignore "/")))
-                  (rd/ParserState "a/bcd" empty-list {}))
+  (test ((rd/parser (apply-to (fn test-alpha [start]
+                                (symbol (str start)))
+                              grmr/alpha
+                              (grmr/ignore "/")))
+         "a/bcd")
         'a "bcd"
         _FILE_ _LINE_)
 
-  (test (rd/parse (rd/parser (grmr/parser-rule "looper"
-                                               (grmr/any (grmr/all "z" (grmr/recurse "looper"))
-                                                         (grmr/always []))))
-                  (rd/ParserState "zzzbcd" empty-list {}))
-        [] "bcd"
+  (test ((rd/parser (grmr/parser-rule "looper"
+                                      (grmr/any (grmr/all "z" (grmr/recurse "looper"))
+                                                (grmr/always []))))
+         "zzzbcd")
+        ["z" ["z" ["z" []]]] "bcd"
         _FILE_ _LINE_)
 
   (print-err 'done))

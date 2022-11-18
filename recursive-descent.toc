@@ -4,9 +4,9 @@
                            :sha "43bc6f4"))
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "77a3dfa"))
+                             :sha "7cddf1e"))
 
-(deftype ParserState [curr-input input values]
+(deftype ParserState [curr-input input rule-map values]
   (assert (instance? String curr-input))
   (assert (instance? HashMap values))
 
@@ -105,18 +105,10 @@
     (se/state-error r))
 
   (collapse-branches [r]
-    r)
+    [r {}])
 
   (parse [r state]
     (assert (instance? ParserState state))))
-
-(extend-type Promise
-  Parser
-  (parse [p state]
-    (cond (delivered p)
-          (parse (extract p) state)
-
-          (ParserError (str "Invalid parser " _FILE_ " " _LINE_) state))))
 
 (extend-type String
   Parser
@@ -144,173 +136,6 @@
                     :when-not (= c test-c)]
                 (ParserMatch c new-state))
               parser-fail))))
-
-(extend-type grmr/parser-always
-  Parser
-  (parse [r state]
-    (ParserMatch (.value r) state)))
-
-(extend-type grmr/parser-apply
-  Parser
-  (parse [r state]
-    (cond (empty? (.args r))
-          (ParserError (str "Invalid parser " _FILE_ " " _LINE_) state)
-
-          (let [f-and-args (reduce (comp [(.pf r)] (.args r))
-                                   (ParserMatch [] state)
-                                   (fn [result inner-r]
-                                     (cond (instance? ParserMatch result)
-                                           (let [inner-result (parse inner-r (.state result))]
-                                             (cond (instance? ParserMatch inner-result)
-                                                   (ParserMatch (conj (.value result)
-                                                                      (.value inner-result))
-                                                                (.state inner-result))
-
-                                                   (instance? ParserIgnore inner-result)
-                                                   (ParserMatch (.value result)
-                                                                (.state inner-result))
-
-                                                   inner-result))
-
-                                           result)))]
-            (cond (instance? ParserMatch f-and-args)
-                  (let [[f & args] (.value f-and-args)]
-                    (.value f-and-args (apply f args)))
-
-                  f-and-args)))))
-
-(extend-type grmr/none-or-more-rule
-  Parser
-  (collapse-branches [r]
-    (let [p (promise)
-          new-r (grmr/any (grmr/parser-apply (grmr/parser-always (fn [x v]
-                                                                   (conj v x)))
-                                             [(.rule r)
-                                              (grmr/any p
-                                                        (grmr/always empty-list))])
-                          (grmr/always empty-list))]
-      (deliver p new-r)
-      new-r)))
-
-(extend-type grmr/repeat-rule
-  Parser
-  (collapse-branches [r]
-    (let [p (promise)
-          new-r (grmr/parser-apply (grmr/parser-always (fn [x v]
-                                                         (conj v x)))
-                                   [(.rule r)
-                                    (grmr/any p
-                                              (grmr/always empty-list))])]
-      (deliver p new-r)
-      new-r)))
-
-(extend-type grmr/parser-rule
-  Parser
-  (parse [r s]
-    (ParserError (str "Un-collapsed rule " (.name r))
-                 s))
-
-  (collapse-branches [r]
-    (cond (instance? grmr/recursion-rule (.name r))
-          (deliver (.prom (.name r)) (.grammar r))
-          '_)
-    (.grammar r)))
-
-(extend-type grmr/recursion-rule
-  Parser
-  (collapse-branches [r]
-    (.prom r))
-
-  (make-parser [r]
-    (comp (map (se/get-val (.rule-name r))
-               (partial .prom r))
-          (map (se/set-val (.rule-name r) (.prom r))
-               (fn [_]
-                 r)))))
-
-(extend-type grmr/All-rule
-  Parser
-  (make-parser [r]
-    (-> (.rules r)
-        reverse
-        (reduce empty-list (fn [l r]
-                             (cond (instance? grmr/Any-rule r)
-                                   (list (map r (fn [inner-r]
-                                                  (grmr/All-rule (comp [inner-r] l)))))
-
-                                   (instance? grmr/All-rule r)
-                                   (comp (.rules r) l)
-
-                                   (conj l r))))
-        vec
-        grmr/All-rule
-        se/state-error))
-
-  (collapse-branches [r]
-    (either (and (= 1 (count (.rules r)))
-                 (first (.rules r)))
-
-            (-> (.rules r)
-                (reduce [] (fn [v inner-r]
-                             (cond (instance? grmr/All-rule inner-r)
-                                   (comp v (.rules inner-r))
-
-                                   (conj v inner-r))))
-                grmr/All-rule)))
-
-  (parse [r state]
-    (cond (empty? (.rules r))
-          (ParserError (str "Invalid parser " _FILE_ " " _LINE_) state)
-
-          (reduce (.rules r) (ParserMatch [] state)
-                  (fn [results inner-r]
-                    (cond (or (instance? ParserIgnore results)
-                              (instance? ParserMatch results))
-                          (let [inn-res (parse inner-r (.state results))]
-                            (cond (instance? ParserMatch inn-res)
-                                  (.value inn-res (conj (.value results) (.value inn-res)))
-
-                                  (instance? ParserIgnore inn-res)
-                                  (.state results (.state inn-res))
-
-                                  inn-res))
-
-                          results))))))
-
-(extend-type grmr/Any-rule
-  Parser
-  (collapse-branches [r]
-    (either (and (= 1 (count (.rules r)))
-                 (first (.rules r)))
-
-            (-> (.rules r)
-                (reduce [] (fn [v inner-r]
-                             (cond (instance? grmr/Any-rule inner-r)
-                                   (comp v (.rules inner-r))
-
-                                   (conj v inner-r))))
-                grmr/Any-rule)))
-
-  (parse [r state]
-    (cond (empty? (.rules r))
-          (ParserError (str "Invalid parser " _FILE_ " " _LINE_) state)
-
-          (reduce (.rules r) parser-fail
-                  (fn [result inner-r]
-                    (either (or (instance? ParserError result)
-                                (instance? ParserMatch result)
-                                (instance? ParserIgnore result))
-
-                            (parse inner-r state)))))))
-
-(extend-type grmr/ignore-rule
-  Parser
-  (parse [r state]
-    (let [result (parse (.rule r) state)]
-      (cond (instance? ParserMatch result)
-            (ParserIgnore (.state result))
-
-            result))))
 
 (extend-type grmr/parser-char-range
   Parser
@@ -385,6 +210,184 @@
   (parse [p state]
     (ParserError (.msg p) state)))
 
+(extend-type grmr/parser-always
+  Parser
+  (parse [r state]
+    (ParserMatch (.value r) state)))
+
+(extend-type grmr/parser-apply
+  Parser
+  (collapse-branches [r]
+    (let [[pf pf-rule-map] (.pf r)
+          [args rule-map] (reduce (.args r) [[] {}]
+                                  (fn [[r m] [inner-r inner-m]]
+                                    [(conj r inner-r)
+                                     (comp m inner-m)]))]
+      [(grmr/parser-apply pf args) (comp pf-rule-map rule-map)]))
+
+  (parse [r state]
+    (cond (empty? (.args r))
+          (ParserError (str "Invalid parser " _FILE_ " " _LINE_) state)
+
+          (let [f-and-args (reduce (comp [(.pf r)] (.args r))
+                                   (ParserMatch [] state)
+                                   (fn [result inner-r]
+                                     (cond (instance? ParserMatch result)
+                                           (let [inner-result (parse inner-r (.state result))]
+                                             (cond (instance? ParserMatch inner-result)
+                                                   (ParserMatch (conj (.value result)
+                                                                      (.value inner-result))
+                                                                (.state inner-result))
+
+                                                   (instance? ParserIgnore inner-result)
+                                                   (ParserMatch (.value result)
+                                                                (.state inner-result))
+
+                                                   inner-result))
+
+                                           result)))]
+            (cond (instance? ParserMatch f-and-args)
+                  (let [[f & args] (.value f-and-args)]
+                    (.value f-and-args (apply f args)))
+
+                  f-and-args)))))
+
+(extend-type grmr/none-or-more-rule
+  Parser
+  (collapse-branches [r]
+    (let [[rule rule-map] (.rule r)
+          p (grmr/recurse (str (gensym "none-or-more")))
+          new-r (grmr/any (grmr/parser-apply (grmr/parser-always (fn none-conj [x v]
+                                                                   (conj v x)))
+                                             [rule
+                                              (grmr/any p
+                                                        (grmr/always empty-list))])
+                          (grmr/always empty-list))]
+      [new-r (assoc rule-map (.rule-name p) new-r)])))
+
+(extend-type grmr/repeat-rule
+  Parser
+  (collapse-branches [r]
+    (let [[rule rule-map] (.rule r)
+          p (grmr/recurse (str (gensym "one-or-more")))
+          new-r (grmr/parser-apply (grmr/parser-always (fn repeat-conj [x v]
+                                                         (conj v x)))
+                                   [rule
+                                    (grmr/any p
+                                              (grmr/always empty-list))])]
+      [new-r (assoc rule-map (.rule-name p) new-r)])))
+
+(extend-type grmr/parser-rule
+  Parser
+  (collapse-branches [r]
+    (let [[rule rule-map] (.grammar r)
+          name (cond (instance? grmr/recursion-rule (.name r))
+                     (.rule-name (.name r))
+                     (.name r))]
+      [rule (assoc rule-map name rule)]))
+
+  (parse [r s]
+    (ParserError (str "Un-collapsed rule " (.name r))
+                 s)))
+
+(extend-type grmr/recursion-rule
+  Parser
+  (parse [r s]
+    (either (map (get-in s [.rule-map (.rule-name r)])
+                 (fn [rr]
+                   (parse rr s)))
+            (ParserError (str "Un-defined recursive rule " (.rule-name r))
+                         s))))
+
+(extend-type grmr/All-rule
+  Parser
+  (make-parser [r]
+    (-> (.rules r)
+        reverse
+        (reduce empty-list (fn [l r]
+                             (cond (instance? grmr/Any-rule r)
+                                   (list (map r (fn [inner-r]
+                                                  (grmr/All-rule (comp [inner-r] l)))))
+
+                                   (instance? grmr/All-rule r)
+                                   (comp (.rules r) l)
+
+                                   (conj l r))))
+        vec
+        grmr/All-rule
+        se/state-error))
+
+  (collapse-branches [r]
+    (let [[rules rule-map] (reduce (.rules r) [[] {}]
+                                   (fn [[r m] [inner-r inner-m]]
+                                     (cond (instance? grmr/All-rule inner-r)
+                                           [(comp r (.rules inner-r))
+                                            (comp m inner-m)]
+
+                                           [(conj r inner-r)
+                                            (comp m inner-m)])))]
+      [(either (and (= 1 (count rules))
+                    (first rules))
+               (grmr/All-rule rules))
+       rule-map]))
+
+  (parse [r state]
+    (cond (empty? (.rules r))
+          (ParserError (str "Invalid parser " _FILE_ " " _LINE_) state)
+
+          (reduce (.rules r) (ParserMatch [] state)
+                  (fn [results inner-r]
+                    (cond (or (instance? ParserIgnore results)
+                              (instance? ParserMatch results))
+                          (let [inn-res (parse inner-r (.state results))]
+                            (cond (instance? ParserMatch inn-res)
+                                  (.value inn-res (conj (.value results) (.value inn-res)))
+
+                                  (instance? ParserIgnore inn-res)
+                                  (.state results (.state inn-res))
+
+                                  inn-res))
+
+                          results))))))
+
+(extend-type grmr/Any-rule
+  Parser
+  (collapse-branches [r]
+    (let [[rules rule-map] (reduce (.rules r) [[] {}]
+                                   (fn [[r m] [inner-r inner-m]]
+                                     (cond (instance? grmr/Any-rule inner-r)
+                                           [(comp r (.rules inner-r))
+                                            (comp m inner-m)]
+
+                                           [(conj r inner-r)
+                                            (comp m inner-m)])))]
+      [(grmr/Any-rule rules) rule-map]))
+
+  (parse [r state]
+    (cond (empty? (.rules r))
+          (ParserError (str "Invalid parser " _FILE_ " " _LINE_) state)
+
+          (reduce (.rules r) parser-fail
+                  (fn [result inner-r]
+                    (either (or (instance? ParserError result)
+                                (instance? ParserMatch result)
+                                (instance? ParserIgnore result))
+
+                            (parse inner-r state)))))))
+
+(extend-type grmr/ignore-rule
+  Parser
+  (collapse-branches [r]
+    (let [[rule rule-map] (.rule r)]
+      [(grmr/ignore rule) rule-map]))
+
+  (parse [r state]
+    (let [result (parse (.rule r) state)]
+      (cond (instance? ParserMatch result)
+            (ParserIgnore (.state result))
+
+            result))))
+
 (defprotocol WrapInput
   (wrap-input [x]
     x))
@@ -395,13 +398,18 @@
 
 (defn parser [grammar]
   (let [grammar (ana terminate-string grammar)
+        ;; _ (print-err 'grmr grammar)
         [raw] ((cata make-parser grammar se/state-error) {})
-        grammar-parser (cata collapse-branches raw)]
+        ;; _ (print-err 'raw _LINE_ raw)
+        [grammar-parser rules-map] (cata collapse-branches raw)
+        ;; _ (print-err 'collapsed _LINE_ grammar-parser)
+        ;; _ (print-err 'rules-map _LINE_ rules-map)
+        ]
     (fn
       ([input]
-       (parse grammar-parser (ParserState "" (wrap-input input) {})))
+       (parse grammar-parser (ParserState "" (wrap-input input) rules-map {})))
       ([values input]
-       (parse grammar-parser (ParserState "" (wrap-input input) values))))))
+       (parse grammar-parser (ParserState "" (wrap-input input) rules-map values))))))
 
 ;; TODO: may no longer be correct after switching to state-error
 ;; (defn parse-stream
