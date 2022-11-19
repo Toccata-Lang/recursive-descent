@@ -1,10 +1,7 @@
 
-(add-ns se (git-dependency "https://github.com/Toccata-Lang/state-error.git"
-                           "state-error.toc"
-                           :sha "43bc6f4"))
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "7cddf1e"))
+                             :sha "e8eba87"))
 
 (deftype ParserState [curr-input input rule-map values]
   (assert (instance? String curr-input))
@@ -100,10 +97,6 @@
   (terminate-string [s]
     s)
   
-  (make-parser [r]
-    (assert-result r (instance? se/StateError r))
-    (se/state-error r))
-
   (collapse-branches [r]
     [r {}])
 
@@ -113,10 +106,7 @@
 (extend-type String
   Parser
   (terminate-string [s]
-    (grmr/parser-terminal s))
-  
-  (make-parser [s]
-    (se/state-error (grmr/term s))))
+    (grmr/parser-terminal s)))
 
 (extend-type grmr/parser-terminal
   Parser
@@ -255,32 +245,50 @@
 (extend-type grmr/none-or-more-rule
   Parser
   (collapse-branches [r]
-    (let [[rule rule-map] (.rule r)
-          p (grmr/recurse (str (gensym "none-or-more")))
-          new-r (grmr/any (grmr/parser-apply (grmr/parser-always (fn none-conj [x v]
-                                                                   (conj v x)))
-                                             [rule
-                                              (grmr/any p
-                                                        (grmr/always empty-list))])
-                          (grmr/always empty-list))]
-      [new-r (assoc rule-map (.rule-name p) new-r)])))
+    (let [[rule rule-map] (.rule r)]
+      [(.rule r rule) rule-map]))
+
+  (parse [r s]
+    (let [f (fn repeat-parse [vs s]
+              (let [v (parse (.rule r) s)]
+                (cond (instance? ParserFail v)
+                      (ParserMatch vs s)
+
+                      (instance? ParserMatch v)
+                      (repeat-parse (conj vs (.value v)) (.state v))
+
+                      (instance? ParserIgnore v)
+                      (repeat-parse vs (.state v))
+
+                      v)))]
+      (f [] s))))
 
 (extend-type grmr/repeat-rule
   Parser
   (collapse-branches [r]
-    (let [[rule rule-map] (.rule r)
-          p (grmr/recurse (str (gensym "one-or-more")))
-          new-r (grmr/parser-apply (grmr/parser-always (fn repeat-conj [x v]
-                                                         (conj v x)))
-                                   [rule
-                                    (grmr/any p
-                                              (grmr/always empty-list))])]
-      [new-r (assoc rule-map (.rule-name p) new-r)])))
+    (let [[rule rule-map] (.rule r)]
+      [(.rule r rule) rule-map]))
+
+  (parse [r s]
+    (let [f (fn repeat-parse [vs s]
+              (let [v (parse (.rule r) s)]
+                (cond (and (instance? ParserFail v)
+                           (< 0 (count vs)))
+                      (ParserMatch vs s)
+
+                      (instance? ParserMatch v)
+                      (repeat-parse (conj vs (.value v)) (.state v))
+
+                      (instance? ParserIgnore v)
+                      (repeat-parse vs (.state v))
+
+                      v)))]
+      (f [] s))))
 
 (extend-type grmr/parser-rule
   Parser
   (collapse-branches [r]
-    (let [[rule rule-map] (.grammar r)
+    (let [[rule rule-map] (.rule r)
           name (cond (instance? grmr/recursion-rule (.name r))
                      (.rule-name (.name r))
                      (.name r))]
@@ -301,22 +309,6 @@
 
 (extend-type grmr/All-rule
   Parser
-  (make-parser [r]
-    (-> (.rules r)
-        reverse
-        (reduce empty-list (fn [l r]
-                             (cond (instance? grmr/Any-rule r)
-                                   (list (map r (fn [inner-r]
-                                                  (grmr/All-rule (comp [inner-r] l)))))
-
-                                   (instance? grmr/All-rule r)
-                                   (comp (.rules r) l)
-
-                                   (conj l r))))
-        vec
-        grmr/All-rule
-        se/state-error))
-
   (collapse-branches [r]
     (let [[rules rule-map] (reduce (.rules r) [[] {}]
                                    (fn [[r m] [inner-r inner-m]]
@@ -397,11 +389,12 @@
   (wrap-input [x] (list x)))
 
 (defn parser [grammar]
+  ;; TODO: might could use hylo here
   (let [grammar (ana terminate-string grammar)
         ;; _ (print-err 'grmr grammar)
-        [raw] ((cata make-parser grammar se/state-error) {})
+        ;; [raw] ((cata make-parser grammar se/state-error) {})
         ;; _ (print-err 'raw _LINE_ raw)
-        [grammar-parser rules-map] (cata collapse-branches raw)
+        [grammar-parser rules-map] (cata collapse-branches grammar)
         ;; _ (print-err 'collapsed _LINE_ grammar-parser)
         ;; _ (print-err 'rules-map _LINE_ rules-map)
         ]

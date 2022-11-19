@@ -2,7 +2,7 @@
 ;; Components to build the grammar out of
 (add-ns grmr (git-dependency "https://github.com/Toccata-Lang/grammar.git"
                              "grammar.toc"
-                             :sha "7cddf1e"))
+                             :sha "e8eba87"))
 (add-ns rd (module "recursive-descent.toc"))
 
 (defn test [result matched remaining file line]
@@ -69,23 +69,28 @@
         _FILE_ _LINE_)
 
   (test ((rd/parser (grmr/one-or-more "a")) "aa")
-        (list "a" "a") ""
+        ["a" "a"] ""
         _FILE_ _LINE_)
 
   (test ((rd/parser (grmr/one-or-more "a")) "aax")
-        (list "a" "a") "x"
+        ["a" "a"] "x"
         _FILE_ _LINE_)
 
   (test ((rd/parser (grmr/none-or-more "a")) "aa")
-        (list "a" "a") ""
+        ["a" "a"] ""
         _FILE_ _LINE_)
 
   (test ((rd/parser (grmr/none-or-more "x")) "aax")
-        empty-list "aax"
+        [] "aax"
         _FILE_ _LINE_)
   
   (test ((rd/parser (grmr/none-or-more grmr/alpha)) "abcd1x")
-        (list "a" "b" "c" "d") "1x"
+        ["a" "b" "c" "d"] "1x"
+        _FILE_ _LINE_)
+
+  (test ((rd/parser (grmr/all (grmr/any "a" "b")
+                              (grmr/one-or-more "a"))) "aa")
+        ["a" ["a"]] ""
         _FILE_ _LINE_)
 
   (test ((rd/parser (apply-to (fn test-alpha [start]
