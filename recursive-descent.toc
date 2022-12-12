@@ -197,8 +197,19 @@
 
 (extend-type grmr/error-value
   Parser
-  (parse [p state]
-    (ParserError (.msg p) state)))
+  (parse [error state]
+    (either (or (for [file (get-in error [.state .values 'file-name])
+                      line (get-in error [.state .values 'line-number])
+                      expr-line (get-in state [.values 'line-number])]
+                  (ParserError (str (cond (= line expr-line) ""
+                                          (str "\n In expression at line " (str expr-line ".\n")))
+                                    "Error at " file ": " line "; " (.msg error))
+                               state))
+                (for [file (get-in state [.values 'file-name])
+                      line (get-in state [.values 'line-number])]
+                  (ParserError (str "Error at " file ": " line "; " (.msg error))
+                               state)))
+            (ParserError (.msg error) state))))
 
 (extend-type grmr/parser-always
   Parser
